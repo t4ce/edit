@@ -10,6 +10,14 @@ rust-version.workspace = true
 build = "build/main.rs"
 categories = ["text-editors"]
 
+[package.metadata.trueos-blueprint]
+replicatable = false
+entry-abi = "argv-v1"
+
+[[bin]]
+name = "edit"
+path = "src/bin/edit/main.rs"
+
 [[bench]]
 name = "lib"
 harness = false
@@ -23,14 +31,14 @@ lsh.workspace = true
 stdext.workspace = true
 
 [target.'cfg(unix)'.dependencies]
-libc = "0.2"
+libc = "=0.2.186"
 
 [build-dependencies]
 stdext.workspace = true
 lsh.workspace = true
 # The default toml crate bundles its dependencies with bad compile times. Thanks.
 # Thankfully toml-span exists. FWIW the alternative is yaml-rust (without the 2 suffix).
-toml-span = { version = "0.7", default-features = false }
+toml-span = { version = "=0.7.1", default-features = false }
 
 [target.'cfg(windows)'.build-dependencies]
 winresource = { version = "0.1", default-features = false }

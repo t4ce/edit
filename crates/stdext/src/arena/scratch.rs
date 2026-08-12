@@ -1,10 +1,10 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-use std::io;
 #[cfg(debug_assertions)]
 use std::marker::PhantomData;
 use std::ops::Deref;
+use std::{io, mem};
 
 #[cfg(debug_assertions)]
 use super::debug;
@@ -85,6 +85,15 @@ mod single_threaded {
         Ok(())
     }
 
+    /// Releases scratch arena storage initialized on this thread.
+    pub fn deinit() {
+        unsafe {
+            for s in &mut S_SCRATCH[..] {
+                drop(mem::take(s));
+            }
+        }
+    }
+
     /// Need an arena for temporary allocations? [`scratch_arena`] got you covered.
     /// Call [`scratch_arena`] and it'll return an [`Arena`] that resets when it goes out of scope.
     ///
@@ -140,6 +149,15 @@ mod multi_threaded {
             INIT_SIZE.store(capacity, Ordering::Relaxed);
         }
         Ok(())
+    }
+
+    /// Releases scratch arena storage initialized on this thread.
+    pub fn deinit() {
+        S_SCRATCH.with(|arenas| {
+            for arena in arenas {
+                drop(arena.take());
+            }
+        });
     }
 
     /// See `single_threaded::scratch_arena`.

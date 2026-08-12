@@ -65,14 +65,22 @@ pub struct GapBuffer {
 
 impl GapBuffer {
     pub fn new(small: bool) -> io::Result<Self> {
-        let reserve;
+        let mut reserve;
         let buffer;
         let text;
 
-        if small {
+        if small || cfg!(target_os = "trueos") {
             reserve = SMALL_CAPACITY;
             text = NonNull::dangling();
             buffer = BackingBuffer::Vec(Vec::new());
+            #[cfg(target_os = "trueos")]
+            if !small {
+                // TRUEOS does not yet expose sparse virtual reservations to
+                // Blueprints. Keep the large logical capacity, but grow its
+                // physical backing on demand instead of allocating the full
+                // 4-GiB Unix reservation at document creation time.
+                reserve = LARGE_CAPACITY;
+            }
         } else {
             reserve = LARGE_CAPACITY;
             text = unsafe { virtual_reserve(reserve)? };

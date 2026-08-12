@@ -11,7 +11,9 @@ use std::fs::File;
 use std::mem::{self, ManuallyDrop, MaybeUninit};
 use std::os::fd::{AsRawFd as _, FromRawFd as _};
 use std::path::Path;
-use std::ptr::{NonNull, null_mut};
+use std::ptr::NonNull;
+#[cfg(not(target_os = "trueos"))]
+use std::ptr::null_mut;
 use std::{io, thread, time};
 
 use stdext::arena::{Arena, scratch_arena};
@@ -41,6 +43,7 @@ static mut STATE: State = State {
     utf8_len: 0,
 };
 
+#[cfg(not(target_os = "trueos"))]
 extern "C" fn sigwinch_handler(_: libc::c_int) {
     unsafe {
         STATE.inject_resize = true;
@@ -68,10 +71,14 @@ pub fn switch_modes() -> io::Result<()> {
         // Store the stdin flags so we can more easily toggle `O_NONBLOCK` later on.
         STATE.stdin_flags = check_int_return(libc::fcntl(STATE.stdin, libc::F_GETFL))?;
 
-        // Set STATE.inject_resize to true whenever we get a SIGWINCH.
-        let mut sigwinch_action: libc::sigaction = mem::zeroed();
-        sigwinch_action.sa_sigaction = sigwinch_handler as *const () as libc::sighandler_t;
-        check_int_return(libc::sigaction(libc::SIGWINCH, &sigwinch_action, null_mut()))?;
+        // Set STATE.inject_resize to true whenever we get a SIGWINCH. TRUEOS does
+        // not implement sigaction yet, so it continues to use explicit size queries.
+        #[cfg(not(target_os = "trueos"))]
+        {
+            let mut sigwinch_action: libc::sigaction = mem::zeroed();
+            sigwinch_action.sa_sigaction = sigwinch_handler as *const () as libc::sighandler_t;
+            check_int_return(libc::sigaction(libc::SIGWINCH, &sigwinch_action, null_mut()))?;
+        }
 
         // Get the original terminal modes so we can disable raw mode on exit.
         let mut termios = MaybeUninit::<libc::termios>::uninit();

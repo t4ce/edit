@@ -35,10 +35,41 @@ use stdext::collections::{BString, BVec};
 
 use crate::settings::Settings;
 
-#[cfg(target_pointer_width = "32")]
+#[cfg(all(target_pointer_width = "32", not(target_os = "trueos")))]
 const SCRATCH_ARENA_CAPACITY: usize = 128 * MEBI;
-#[cfg(target_pointer_width = "64")]
+#[cfg(all(target_pointer_width = "64", not(target_os = "trueos")))]
 const SCRATCH_ARENA_CAPACITY: usize = 512 * MEBI;
+#[cfg(target_os = "trueos")]
+const SCRATCH_ARENA_CAPACITY: usize = 4 * MEBI;
+
+#[cfg(target_os = "trueos")]
+unsafe extern "C" {
+    fn trueos_cabi_log(
+        level: u32,
+        target_ptr: *const u8,
+        target_len: usize,
+        message_ptr: *const u8,
+        message_len: usize,
+    ) -> i32;
+}
+
+fn trueos_log(message: &str) {
+    #[cfg(target_os = "trueos")]
+    unsafe {
+        const TARGET: &str = "edit";
+        let _ = trueos_cabi_log(2, TARGET.as_ptr(), TARGET.len(), message.as_ptr(), message.len());
+    }
+    #[cfg(not(target_os = "trueos"))]
+    let _ = message;
+}
+
+struct ScratchArenasDeinit;
+
+impl Drop for ScratchArenasDeinit {
+    fn drop(&mut self) {
+        arena::deinit();
+    }
+}
 
 // NOTE: Before our main() gets called, Rust initializes its stdlib. This pulls in the entire
 // std::io::{stdin, stdout, stderr} machinery, and probably some more, which amounts to about 20KB.
@@ -56,7 +87,9 @@ fn main() -> process::ExitCode {
     match run() {
         Ok(()) => process::ExitCode::SUCCESS,
         Err(err) => {
-            sys::write_stdout(&format!("{}\n", FormatApperr::from(err)));
+            let message = format!("{}", FormatApperr::from(err));
+            trueos_log(&format!("startup failed: {message}"));
+            sys::write_stdout(&format!("{message}\n"));
             process::ExitCode::FAILURE
         }
     }
@@ -65,8 +98,11 @@ fn main() -> process::ExitCode {
 fn run() -> apperr::Result<()> {
     // Init `sys` first, as everything else may depend on its functionality (IO, function pointers, etc.).
     let _sys_deinit = sys::init();
+    trueos_log("startup: sys ready");
     // Next init `arena`, so that `scratch_arena` works. `loc` depends on it.
     arena::init(SCRATCH_ARENA_CAPACITY)?;
+    let _scratch_arenas_deinit = ScratchArenasDeinit;
+    trueos_log("startup: scratch arenas ready");
     // Init the `loc` module, so that error messages are localized.
     localization::init();
 
@@ -76,24 +112,31 @@ fn run() -> apperr::Result<()> {
     if let Err(err) = Settings::reload() {
         state.add_error(err);
     }
+    trueos_log("startup: settings checked");
 
     if handle_args(&mut state)? {
+        trueos_log("startup: command-line requested exit");
         return Ok(());
     }
+    trueos_log("startup: arguments ready");
 
     handle_stdin(&mut state)?;
+    trueos_log("startup: stdin ready");
 
     // Switch the terminal to raw mode which prevents the user from pressing Ctrl+C.
     // `handle_args` may want to print a help message (must not fail),
     // and reads files (may hang; should be cancelable with Ctrl+C).
     // As such, we call this after `handle_args`.
     sys::switch_modes()?;
+    trueos_log("startup: terminal mode ready");
 
     let mut vt_parser = vt::Parser::new();
     let mut input_parser = input::Parser::new();
     let mut tui = Tui::new()?;
+    trueos_log("startup: tui arenas ready");
 
     let _restore = setup_terminal(&mut tui, &mut state, &mut vt_parser);
+    trueos_log("startup: terminal setup complete");
 
     state.menubar_color_bg = tui.indexed(IndexedColor::Background).oklab_blend(tui.indexed_alpha(
         IndexedColor::BrightBlue,
@@ -116,6 +159,7 @@ fn run() -> apperr::Result<()> {
     tui.set_modal_default_fg(floater_fg);
 
     sys::inject_window_size_into_stdin();
+    trueos_log("startup: entering editor loop");
 
     #[cfg(feature = "debug-latency")]
     let mut last_latency_width = 0;
@@ -131,6 +175,7 @@ fn run() -> apperr::Result<()> {
             let scratch = scratch_arena(None);
             let read_timeout = vt_parser.read_timeout().min(tui.read_timeout());
             let Some(input) = sys::read_stdin(&scratch, read_timeout) else {
+                trueos_log("editor loop: stdin returned EOF or error");
                 break;
             };
 

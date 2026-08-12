@@ -166,6 +166,10 @@ const ROOT_ID: u64 = 0x14057B7EF767814F; // Knuth's MMIX constant
 const SHIFT_TAB: InputKey = vk::TAB.with_modifiers(kbmod::SHIFT);
 const KBMOD_FOR_WORD_NAV: InputKeyMod =
     if cfg!(any(target_os = "macos", target_os = "ios")) { kbmod::ALT } else { kbmod::CTRL };
+#[cfg(not(target_os = "trueos"))]
+const TUI_ARENA_CAPACITY: usize = 128 * MEBI;
+#[cfg(target_os = "trueos")]
+const TUI_ARENA_CAPACITY: usize = 4 * MEBI;
 
 type Input<'input> = input::Input<'input>;
 type InputKey = input::InputKey;
@@ -381,8 +385,8 @@ pub struct Tui {
 impl Tui {
     /// Creates a new [`Tui`] instance for storing state across frames.
     pub fn new() -> io::Result<Self> {
-        let arena_prev = Arena::new(128 * MEBI)?;
-        let arena_next = Arena::new(128 * MEBI)?;
+        let arena_prev = Arena::new(TUI_ARENA_CAPACITY)?;
+        let arena_next = Arena::new(TUI_ARENA_CAPACITY)?;
         // SAFETY: Since `prev_tree` refers to `arena_prev`/`arena_next`, from its POV the lifetime
         // is `'static`, requiring us to use `transmute` to circumvent the borrow checker.
         let prev_tree = Tree::new(unsafe { mem::transmute::<&Arena, &Arena>(&arena_next) });
