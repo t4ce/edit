@@ -12,6 +12,11 @@ This editor pays homage to the classic [MS-DOS Editor](https://en.wikipedia.org/
 
 You can also download binaries from [our Releases page](https://github.com/microsoft/edit/releases/latest).
 
+### TrueOS
+
+This professional grade Terminal Texteditor from Microsoft has been successfully packed
+as an App to run on the TrueOS Operating System.
+
 ### Windows
 
 You can install the latest version with WinGet:
