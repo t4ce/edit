@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 use std::cmp::Ordering;
+#[cfg(not(target_os = "trueos"))]
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -323,6 +324,11 @@ fn draw_dialog_saveas_refresh_files(state: &mut State) {
         dirs_files[0].push(DisplayablePathBuf::from(".."));
     }
 
+    // Built-in TRUEOS apps are deliberately memory-only at the moment.  Do
+    // not make a synchronous POSIX directory-stream request here: app launch
+    // and Blueprint storage are app.db-backed, and filesystem access will be
+    // reintroduced only through the typed async TRUEOS VFS API.
+    #[cfg(not(target_os = "trueos"))]
     if let Ok(iter) = fs::read_dir(dir) {
         for entry in iter.flatten() {
             if let Ok(metadata) = entry.metadata() {

@@ -43,9 +43,21 @@ impl Settings {
             *s = Settings::new();
         }
 
-        s.load()
+        // The built-in editor has no direct filesystem capability.  Settings
+        // will become an explicit async TRUEOS VFS operation alongside file
+        // open/save, rather than implicitly loading a host-style config path.
+        #[cfg(target_os = "trueos")]
+        {
+            let _ = s;
+            Ok(())
+        }
+        #[cfg(not(target_os = "trueos"))]
+        {
+            s.load()
+        }
     }
 
+    #[cfg(not(target_os = "trueos"))]
     fn load(&mut self) -> apperr::Result<()> {
         self.path = match settings_json_path() {
             Some(p) => p,

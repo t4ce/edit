@@ -8,7 +8,7 @@ mod unix;
 #[cfg(windows)]
 mod windows;
 
-#[cfg(not(windows))]
+#[cfg(all(not(windows), not(target_os = "trueos")))]
 pub use std::fs::canonicalize;
 
 #[cfg(unix)]
