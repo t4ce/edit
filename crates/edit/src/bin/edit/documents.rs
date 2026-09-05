@@ -4,7 +4,6 @@
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::io;
-#[cfg(not(target_os = "trueos"))]
 use std::{fs, fs::File};
 
 use edit::buffer::{RcTextBuffer, TextBuffer};
@@ -27,12 +26,6 @@ pub struct Document {
 }
 
 impl Document {
-    #[cfg(target_os = "trueos")]
-    pub fn save(&mut self, _new_path: Option<PathBuf>) -> apperr::Result<()> {
-        Err(memory_only_filesystem_error())
-    }
-
-    #[cfg(not(target_os = "trueos"))]
     pub fn save(&mut self, new_path: Option<PathBuf>) -> apperr::Result<()> {
         let path = new_path.as_deref().unwrap_or_else(|| self.path.as_ref().unwrap().as_path());
         let mut file = DocumentManager::open_for_writing(path)?;
@@ -53,12 +46,6 @@ impl Document {
         Ok(())
     }
 
-    #[cfg(target_os = "trueos")]
-    pub fn reread(&mut self, _encoding: Option<&'static str>) -> apperr::Result<()> {
-        Err(memory_only_filesystem_error())
-    }
-
-    #[cfg(not(target_os = "trueos"))]
     pub fn reread(&mut self, encoding: Option<&'static str>) -> apperr::Result<()> {
         let path = self.path.as_ref().unwrap().as_path();
         let mut file = DocumentManager::open_for_reading(path)?;
@@ -220,12 +207,6 @@ impl DocumentManager {
         doc.new_file_counter = new_file_counter;
     }
 
-    #[cfg(target_os = "trueos")]
-    pub fn add_file_path(&mut self, _path: &Path) -> apperr::Result<&mut Document> {
-        Err(memory_only_filesystem_error())
-    }
-
-    #[cfg(not(target_os = "trueos"))]
     pub fn add_file_path(&mut self, path: &Path) -> apperr::Result<&mut Document> {
         let path = path::normalize(path);
 
@@ -283,12 +264,10 @@ impl DocumentManager {
         }
     }
 
-    #[cfg(not(target_os = "trueos"))]
     pub fn open_for_reading(path: &Path) -> apperr::Result<File> {
         File::open(path).map_err(apperr::Error::from)
     }
 
-    #[cfg(not(target_os = "trueos"))]
     pub fn open_for_writing(path: &Path) -> apperr::Result<File> {
         // Error handling for directory creation and file writing
 
@@ -313,15 +292,6 @@ impl DocumentManager {
         }
         Ok(buffer)
     }
-}
-
-#[cfg(target_os = "trueos")]
-fn memory_only_filesystem_error() -> apperr::Error {
-    io::Error::new(
-        io::ErrorKind::Unsupported,
-        "edit is memory-only on TRUEOS; direct paths will return through trueos::async_fs",
-    )
-    .into()
 }
 
 /// Parse a filename in the form of "filename:line:char".
