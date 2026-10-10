@@ -151,6 +151,33 @@ impl Drop for Deinit {
     }
 }
 
+#[cfg(target_os = "trueos")]
+unsafe extern "C" {
+    fn trueos_cabi_blueprint_terminal_surface_snapshot_v1(
+        generation: *mut u64,
+        columns: *mut u32,
+        rows: *mut u32,
+    ) -> i32;
+}
+
+// TRUEOS wakes terminal pollers on surface changes instead of sending SIGWINCH.
+// Keep the last good generation across parked/detached terminal leases.
+#[cfg(target_os = "trueos")]
+fn check_terminal_resize() {
+    static mut GENERATION: u64 = 0;
+    let (mut generation, mut columns, mut rows) = (0, 0, 0);
+    unsafe {
+        if trueos_cabi_blueprint_terminal_surface_snapshot_v1(
+            &mut generation, &mut columns, &mut rows,
+        ) == 0 && generation != 0 && columns != 0 && rows != 0 {
+            if generation != GENERATION {
+                GENERATION = generation;
+                STATE.inject_resize = true;
+            }
+        }
+    }
+}
+
 pub fn inject_window_size_into_stdin() {
     unsafe {
         STATE.inject_resize = true;
@@ -186,6 +213,8 @@ fn get_window_size() -> (u16, u16) {
 /// Otherwise, it returns the read, non-empty string.
 pub fn read_stdin(arena: &Arena, mut timeout: time::Duration) -> Option<BString<'_>> {
     unsafe {
+        #[cfg(target_os = "trueos")]
+        check_terminal_resize();
         if STATE.inject_resize {
             timeout = time::Duration::ZERO;
         }
@@ -223,6 +252,8 @@ pub fn read_stdin(arena: &Arena, mut timeout: time::Duration) -> Option<BString<
                 {
                     ret = libc::poll(&mut pollfd, 1, timeout.as_millis() as libc::c_int);
                 }
+                #[cfg(target_os = "trueos")]
+                check_terminal_resize();
                 if ret < 0 {
                     return None; // Error? Let's assume it's an EOF.
                 }
