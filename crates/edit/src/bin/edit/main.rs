@@ -185,6 +185,13 @@ fn run() -> apperr::Result<()> {
                 passes = 0usize;
             }
 
+            #[cfg(target_os = "trueos")]
+            if sys::take_terminal_restore() {
+                enable_terminal_modes();
+                sys::write_stdout("\x1b[0m\x1b[r\x1b[2J\x1b[H");
+                tui.invalidate_terminal();
+            }
+
             let vt_iter = vt_parser.parse(&input);
             let mut input_iter = input_parser.parse(vt_iter);
 
@@ -627,7 +634,12 @@ impl Drop for RestoreModes {
     }
 }
 
+fn enable_terminal_modes() {
+    sys::write_stdout("\x1b[?1049h\x1b[?1002;1006;2004h\x1b[?1036h");
+}
+
 fn setup_terminal(tui: &mut Tui, state: &mut State, vt_parser: &mut vt::Parser) -> RestoreModes {
+    enable_terminal_modes();
     sys::write_stdout(concat!(
         // 1049: Alternative Screen Buffer
         //   I put the ASB switch in the beginning, just in case the terminal performs
@@ -636,7 +648,6 @@ fn setup_terminal(tui: &mut Tui, state: &mut State, vt_parser: &mut vt::Parser) 
         // 1006: SGR Mouse Mode
         // 2004: Bracketed Paste Mode
         // 1036: Xterm: "meta sends escape" (Alt keypresses should be encoded with ESC + char)
-        "\x1b[?1049h\x1b[?1002;1006;2004h\x1b[?1036h",
         // OSC 4 color table requests for indices 0 through 15 (base colors).
         "\x1b]4;0;?;1;?;2;?;3;?;4;?;5;?;6;?;7;?\x07",
         "\x1b]4;8;?;9;?;10;?;11;?;12;?;13;?;14;?;15;?\x07",

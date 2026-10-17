@@ -104,6 +104,7 @@ pub struct Framebuffer {
     buffers: [Buffer; 2],
     /// The current frame counter. Increments on every `flip` call.
     frame_counter: usize,
+    force_redraw: bool,
     /// The colors used for `contrast()`. It stores the default colors
     /// of the palette as [dark, light], unless the palette is recognized
     /// as a light them, in which case it swaps them.
@@ -124,6 +125,7 @@ impl Framebuffer {
             indexed_colors: DEFAULT_THEME,
             buffers: Default::default(),
             frame_counter: 0,
+            force_redraw: true,
             auto_colors: [
                 DEFAULT_THEME[IndexedColor::Black as usize],
                 DEFAULT_THEME[IndexedColor::BrightWhite as usize],
@@ -134,6 +136,11 @@ impl Framebuffer {
             background_fill: DEFAULT_THEME[IndexedColor::Background as usize],
             foreground_fill: DEFAULT_THEME[IndexedColor::Foreground as usize],
         }
+    }
+
+    /// Redraw the retained frame after another terminal owner cleared it.
+    pub fn invalidate(&mut self) {
+        self.force_redraw = true;
     }
 
     /// Sets the base color palette.
@@ -466,7 +473,7 @@ impl Framebuffer {
 
             // TODO: Ideally, we should properly diff the contents and so if
             // only parts of a line change, we should only update those parts.
-            if front_line == back_line
+            if !self.force_redraw && front_line == back_line
                 && front_bg == back_bg
                 && front_fg == back_fg
                 && front_attr == back_attr
@@ -551,7 +558,7 @@ impl Framebuffer {
         // If the cursor has changed since the last frame we naturally need to update it,
         // but this also applies if the code above wrote to the screen,
         // as it uses CUP sequences to reposition the cursor for writing.
-        if !result.is_empty() || back.cursor != front.cursor {
+        if self.force_redraw || !result.is_empty() || back.cursor != front.cursor {
             if back.cursor.pos.x >= 0 && back.cursor.pos.y >= 0 {
                 // CUP to the cursor position.
                 // DECSCUSR to set the cursor style.
@@ -570,6 +577,7 @@ impl Framebuffer {
             }
         }
 
+        self.force_redraw = false;
         result
     }
 
@@ -942,5 +950,31 @@ impl Cursor {
 
     const fn new_disabled() -> Self {
         Self { pos: Point { x: -1, y: -1 }, overtype: false }
+    }
+}
+
+#[cfg(test)]
+mod terminal_reentry_tests {
+    use super::*;
+
+    #[test]
+    fn unchanged_frame_repaints_after_terminal_replacement() {
+        let arena = Arena::new(1024 * 1024).expect("frame arena");
+        let mut framebuffer = Framebuffer::new();
+        let size = Size { width: 8, height: 3 };
+        framebuffer.flip(size);
+        assert!(!framebuffer.render(&arena).is_empty());
+        framebuffer.flip(size);
+        assert!(framebuffer.render(&arena).is_empty());
+
+        framebuffer.invalidate();
+        // Layout can settle through several frames before any bytes are sent.
+        framebuffer.flip(size);
+        framebuffer.flip(size);
+        let repaint = framebuffer.render(&arena);
+        assert!(repaint.contains("\x1b[3;1H"));
+        assert!(repaint.contains("\x1b[?25l"));
+        framebuffer.flip(size);
+        assert!(framebuffer.render(&arena).is_empty());
     }
 }

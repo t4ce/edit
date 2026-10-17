@@ -475,6 +475,11 @@ impl Tui {
         mem::replace(&mut self.read_timeout, time::Duration::MAX)
     }
 
+    /// The terminal surface was replaced while widget/document state survived.
+    pub fn invalidate_terminal(&mut self) {
+        self.framebuffer.invalidate();
+    }
+
     /// Returns the viewport size.
     pub fn size(&self) -> Size {
         // We don't use the size stored in the framebuffer, because until

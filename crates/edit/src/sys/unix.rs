@@ -28,6 +28,8 @@ struct State {
     stdout: libc::c_int,
     stdout_initial_termios: Option<libc::termios>,
     inject_resize: bool,
+    #[cfg(target_os = "trueos")]
+    restore_terminal: bool,
     // Buffer for incomplete UTF-8 sequences (max 4 bytes needed)
     utf8_buf: [u8; 4],
     utf8_len: usize,
@@ -39,6 +41,8 @@ static mut STATE: State = State {
     stdout: libc::STDOUT_FILENO,
     stdout_initial_termios: None,
     inject_resize: false,
+    #[cfg(target_os = "trueos")]
+    restore_terminal: false,
     utf8_buf: [0; 4],
     utf8_len: 0,
 };
@@ -171,10 +175,20 @@ fn check_terminal_resize() {
             &mut generation, &mut columns, &mut rows,
         ) == 0 && generation != 0 && columns != 0 && rows != 0 {
             if generation != GENERATION {
+                STATE.restore_terminal |= GENERATION != 0;
                 GENERATION = generation;
                 STATE.inject_resize = true;
             }
         }
+    }
+}
+
+#[cfg(target_os = "trueos")]
+pub fn take_terminal_restore() -> bool {
+    unsafe {
+        let restore = STATE.restore_terminal;
+        STATE.restore_terminal = false;
+        restore
     }
 }
 
@@ -219,7 +233,9 @@ pub fn read_stdin(arena: &Arena, mut timeout: time::Duration) -> Option<BString<
             timeout = time::Duration::ZERO;
         }
 
-        let read_poll = timeout != time::Duration::MAX;
+        // TRUEOS delivers terminal lifecycle changes through the poll wake.
+        // A blocking read cannot acknowledge re-entry while waiting for bytes.
+        let read_poll = cfg!(target_os = "trueos") || timeout != time::Duration::MAX;
         let mut buf = BVec::empty();
 
         // We don't know if the input is valid UTF8, so we first use a Vec and then
@@ -235,7 +251,7 @@ pub fn read_stdin(arena: &Arena, mut timeout: time::Duration) -> Option<BString<
         }
 
         loop {
-            if timeout != time::Duration::MAX {
+            if read_poll {
                 let beg = time::Instant::now();
 
                 let mut pollfd = libc::pollfd { fd: STATE.stdin, events: libc::POLLIN, revents: 0 };
@@ -250,7 +266,9 @@ pub fn read_stdin(arena: &Arena, mut timeout: time::Duration) -> Option<BString<
                 }
                 #[cfg(not(target_os = "linux"))]
                 {
-                    ret = libc::poll(&mut pollfd, 1, timeout.as_millis() as libc::c_int);
+                    let millis = if timeout == time::Duration::MAX { -1 }
+                        else { timeout.as_millis().min(libc::c_int::MAX as u128) as libc::c_int };
+                    ret = libc::poll(&mut pollfd, 1, millis);
                 }
                 #[cfg(target_os = "trueos")]
                 check_terminal_resize();
