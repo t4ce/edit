@@ -118,3 +118,11 @@ To test your build settings, run `cargo test` with the `--ignored` flag. For ins
 ```sh
 cargo test -- --ignored
 ```
+
+### TRUEOS launch script
+
+The built-in editor also accepts a one-shot `vFile:launch` script. Each
+`open <path>` directive opens that literal path; spaces and option-like text
+are filename characters. A launcher can include `fs-scope trueosfs` to open
+an absolute or `trueosfs:discN/...` file outside the editor's app directory.
+Command-line file arguments continue to work without a launch script.

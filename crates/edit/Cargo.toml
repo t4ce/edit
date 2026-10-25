@@ -30,6 +30,9 @@ debug-latency = []
 lsh.workspace = true
 stdext.workspace = true
 
+[target.'cfg(target_os = "trueos")'.dependencies]
+trueos = { path = "../../../../api" }
+
 [target.'cfg(unix)'.dependencies]
 libc = "=0.2.186"
 

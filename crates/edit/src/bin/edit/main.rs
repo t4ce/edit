@@ -9,6 +9,8 @@ mod draw_menubar;
 mod draw_statusbar;
 mod localization;
 mod settings;
+#[cfg(target_os = "trueos")]
+mod launch_script;
 mod state;
 
 use std::borrow::Cow;
@@ -119,6 +121,8 @@ fn run() -> apperr::Result<()> {
         return Ok(());
     }
     trueos_log("startup: arguments ready");
+    #[cfg(target_os = "trueos")]
+    handle_launch_script(&mut state)?;
 
     handle_stdin(&mut state)?;
     trueos_log("startup: stdin ready");
@@ -355,6 +359,24 @@ fn handle_args(state: &mut State) -> apperr::Result<bool> {
 
     state.file_picker_pending_dir = DisplayablePathBuf::from_path(dir.unwrap_or(cwd));
     Ok(false)
+}
+
+#[cfg(target_os = "trueos")]
+fn handle_launch_script(state: &mut State) -> apperr::Result<()> {
+    let bytes = match trueos::async_fs::block_on(trueos::async_fs::read_file(b"vFile:launch")) {
+        Ok(bytes) => bytes,
+        Err(trueos::async_fs::ERR_NOT_FOUND) => return Ok(()), // Ordinary argv-based launch.
+        Err(code) => return Err(std::io::Error::other(format!("edit launch script read failed ({code})")).into()),
+    };
+    let script = std::str::from_utf8(&bytes)
+        .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))?;
+    for path in launch_script::open_paths(script)? {
+        state.documents.add_file_path(Path::new(path))?;
+        if let Some(parent) = Path::new(path).parent() {
+            state.file_picker_pending_dir = DisplayablePathBuf::from_path(parent.to_path_buf());
+        }
+    }
+    Ok(())
 }
 
 // Read any redirected (piped) stdin into a new document.
